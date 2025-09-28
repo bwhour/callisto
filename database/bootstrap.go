@@ -206,9 +206,9 @@ INSERT INTO bootstrap_staker_assets (
     staker_id, asset_id, deposited, withdrawable, delegated, updated_at
 ) VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (staker_id, asset_id) DO UPDATE
-SET deposited    = EXCLUDED.deposited,
-    withdrawable = EXCLUDED.withdrawable,
-    delegated    = EXCLUDED.delegated,
+SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
+    withdrawable = bootstrap_staker_assets.withdrawable + EXCLUDED.withdrawable,
+    delegated    = bootstrap_staker_assets.delegated + EXCLUDED.delegated,
     updated_at   = EXCLUDED.updated_at;`
 
 	_, err := db.SQL.Exec(stmt,
@@ -228,8 +228,8 @@ SET deposited    = EXCLUDED.deposited,
 func (db *Db) BootstrapStakerAssetExists(stakerID, assetID string) (bool, error) {
 	stmt := `
 SELECT EXISTS(
-    SELECT 1 
-    FROM bootstrap_staker_assets 
+    SELECT 1
+    FROM bootstrap_staker_assets
     WHERE staker_id = $1 AND asset_id = $2
 );`
 
@@ -254,10 +254,11 @@ func (db *Db) DepositBootstrapStakerAsset(stakerID, assetID string, depositAmoun
 	stmt := `
 INSERT INTO bootstrap_staker_assets (
     staker_id, asset_id, deposited, withdrawable, delegated, updated_at
-) VALUES ($1, $2, $3, $3, 0, $4)
+) VALUES ($1, $2, $3, 0, $3, $4)
 ON CONFLICT (staker_id, asset_id) DO UPDATE
 SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
     withdrawable = bootstrap_staker_assets.withdrawable + EXCLUDED.withdrawable,
+    delegated    = bootstrap_staker_assets.delegated + EXCLUDED.delegated,
     updated_at   = EXCLUDED.updated_at;`
 
 	_, err := db.SQL.Exec(
@@ -276,7 +277,7 @@ SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
 func (db *Db) ClaimBootstrapStakerAsset(stakerID, assetID string, claimAmount int64, updatedAt time.Time) error {
 	stmt := `
 UPDATE bootstrap_staker_assets
-SET 
+SET
     deposited    = deposited - $3,
     withdrawable = withdrawable - $3,
     updated_at   = $4
@@ -312,7 +313,7 @@ INSERT INTO bootstrap_delegation_states (
     staker_id, asset_id, operator_addr, delegated, updated_at
 ) VALUES ($1,$2,$3,$4,$5)
 ON CONFLICT (staker_id, asset_id, operator_addr) DO UPDATE
-SET delegated  = EXCLUDED.delegated,
+SET delegated  = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
     updated_at = EXCLUDED.updated_at;`
 
 	_, err := db.SQL.Exec(stmt,

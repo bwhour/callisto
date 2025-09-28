@@ -52,26 +52,6 @@ type Config struct {
 	TokenOracleFeeds    []callistotypes.OracleFeed           `yaml:"token_oracle_feeds"`
 }
 
-// NewConfig allows to build a new Config instance
-func NewConfig(ethHTTP, ethWebsocket, btcRPC, xrpRPC string) *Config {
-	return &Config{
-		ETHHttp:             ethHTTP,
-		ETHWebsocket:        ethWebsocket,
-		BTCRPC:              btcRPC,
-		XRPRPC:              xrpRPC,
-		BTCMinConfirmations: 6,        // Default 6 confirmations for BTC
-		XRPMinConfirmations: 6,        // Default 6 confirmations for XRP
-		BTCMinAmount:        100000,   // Default 0.001 BTC in satoshis
-		XRPMinAmount:        50000000, // Default 50 XRP in drops
-		XRPDestinationTag:   9999,     // Default XRP destination tag
-		MaxFetchIterations:  1000,     // Default max iterations to prevent infinite loops
-		BTCStartHeight:      0,        // Default: scan from genesis
-		XRPStartLedger:      0,        // Default: scan from genesis
-		ScanBatchSize:       100,      // Default batch size
-		ReorgDepth:          6,        // Default reorg detection depth
-	}
-}
-
 func ParseConfig(bz []byte) (*Config, error) {
 	type T struct {
 		Config *Config `yaml:"bootstrap"`

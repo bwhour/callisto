@@ -73,6 +73,9 @@ type BTCTx struct {
 	Vin     []BTCVin  `json:"vin"`
 	Vout    []BTCVout `json:"vout"`
 	TxIndex int64     // Transaction index within block (filled when needed)
+	// Parsed OP_RETURN data for bootstrap transactions
+	ImuachainAddress string `json:"imuachain_address,omitempty"`
+	ValidatorAddress string `json:"validator_address,omitempty"`
 }
 
 type BTCStatus struct {
