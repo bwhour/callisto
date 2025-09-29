@@ -1022,7 +1022,7 @@ func (m *Module) processBTCTxWithTransaction(tx types.BTCTx) error {
 	return m.processTransactionWithRetry("BTC", func() error {
 		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
 			// 1. Save business data (using address data from tx struct)
-			if err := m.saveBTCTransaction(tx); err != nil {
+			if err := m.saveBTCTransaction(dbTx, tx); err != nil {
 				return fmt.Errorf("failed to save BTC transaction data: %w", err)
 			}
 
@@ -1046,8 +1046,8 @@ func (m *Module) isValidatorRegistered(validatorAddr string) (bool, error) {
 	return validatorInfo.Name != "", nil
 }
 
-// saveBTCTransaction saves BTC transaction data to database
-func (m *Module) saveBTCTransaction(tx types.BTCTx) error {
+// saveBTCTransaction saves BTC transaction data to database within a transaction
+func (m *Module) saveBTCTransaction(dbTx *sql.Tx, tx types.BTCTx) error {
 	// Find vault output
 	var vaultOutput *types.BTCVout
 	for _, vout := range tx.Vout {
@@ -1088,7 +1088,7 @@ func (m *Module) saveBTCTransaction(tx types.BTCTx) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := m.database.SaveBootstrapDelegationState(delegationState); err != nil {
+	if err := m.database.SaveBootstrapDelegationStateInTx(dbTx, delegationState); err != nil {
 		return fmt.Errorf("failed to save delegation state: %s", err)
 	}
 
@@ -1480,7 +1480,7 @@ func (m *Module) processXRPTxWithTransaction(tx types.XRPTransaction) error {
 	return m.processTransactionWithRetry("XRP", func() error {
 		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
 			// Save business data using the pre-parsed address fields
-			if err := m.saveXRPTransaction(tx); err != nil {
+			if err := m.saveXRPTransaction(dbTx, tx); err != nil {
 				return fmt.Errorf("failed to save XRP transaction data: %w", err)
 			}
 
@@ -1621,8 +1621,8 @@ func parseXRPMemo(memos []types.XRPMemo) (*XRPMemoData, error) {
 	return nil, fmt.Errorf("no valid memo data found")
 }
 
-// saveXRPTransaction saves XRP transaction data to database
-func (m *Module) saveXRPTransaction(tx types.XRPTransaction) error {
+// saveXRPTransaction saves XRP transaction data to database within a transaction
+func (m *Module) saveXRPTransaction(dbTx *sql.Tx, tx types.XRPTransaction) error {
 	// Get amount
 	amountStr, ok := tx.Tx.Amount.(string)
 	if !ok {
@@ -1647,7 +1647,7 @@ func (m *Module) saveXRPTransaction(tx types.XRPTransaction) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := m.database.SaveBootstrapStakerAsset(stakerAsset); err != nil {
+	if err := m.database.SaveBootstrapStakerAssetInTx(dbTx, stakerAsset); err != nil {
 		return fmt.Errorf("failed to save staker asset: %s", err)
 	}
 
@@ -1660,7 +1660,7 @@ func (m *Module) saveXRPTransaction(tx types.XRPTransaction) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := m.database.SaveBootstrapDelegationState(delegationState); err != nil {
+	if err := m.database.SaveBootstrapDelegationStateInTx(dbTx, delegationState); err != nil {
 		return fmt.Errorf("failed to save delegation state: %s", err)
 	}
 

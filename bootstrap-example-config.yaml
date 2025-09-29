@@ -13,14 +13,30 @@ pruning:
   interval: 5000
 
 bootstrap:
-  eth_http: ""
-  eth_websocket: ""
-  btc_rpc: ""
-  xrp_rpc: ""
+  eth_http: 'https://rpc.hoodi.ethpandaops.io'
+  eth_websocket: 'wss://0xrpc.io/hoodi'
+
   bootstrap_addr: "0xf21FB1667A8Aa3D3ea365D3D1D257f3E4fdd0651"
   eth_update_interval: 1440
-  btc_update_interval: 5
-  xrp_update_interval: 5
+
+  # BTC Configuration
+  btc_rpc: 'http://35.175.192.126:8084/testnet'
+  btc_vault_addr: 'tb1q3w7ar6cxdc7j3g8dunqdve589l0t4383pp8efk'
+  btc_min_confirmations: 6
+  btc_min_amount: 1000 # 0.00001 BTC in satoshis
+  btc_start_height: 100000
+  btc_update_interval: 6
+
+  # XRP Configuration
+  xrp_rpc: 'wss://s.altnet.rippletest.net:51233'
+  xrp_vault_addr: 'rEZgFxT3LbJyhEWrFgf3zUNdv3zCt4KUBJ'
+  xrp_min_confirmations: 6
+  xrp_min_amount: 10000000 # 10 XRP in drops
+  xrp_destination_tag: 9999
+  xrp_start_ledger: 877578
+  xrp_update_interval: 3
+
+  #Token Configuration
   price_update_interval: 60
   eth_lz_chain_id: 40217
   client_chain_infos:
