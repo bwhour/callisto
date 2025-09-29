@@ -1092,7 +1092,7 @@ func (m *Module) saveBTCTransaction(dbTx *sql.Tx, tx types.BTCTx) error {
 		return fmt.Errorf("failed to save delegation state: %s", err)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("txid", tx.TxID).
 		Str("staker", stakerID).
 		Str("validator", tx.ValidatorAddress).
@@ -1664,7 +1664,7 @@ func (m *Module) saveXRPTransaction(dbTx *sql.Tx, tx types.XRPTransaction) error
 		return fmt.Errorf("failed to save delegation state: %s", err)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("hash", tx.Hash).
 		Str("staker", stakerID).
 		Str("validator", tx.ValidatorAddress).

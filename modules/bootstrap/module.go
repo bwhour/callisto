@@ -59,39 +59,23 @@ func NewModule(
 	}
 	bootstrapAddr := common.HexToAddress(bootstrapCfg.BootstrapAddr)
 
-	httpRC, err := rpc.DialContext(context.Background(), bootstrapCfg.ETHHttp)
+	// Initialize ETH clients
+	ethHTTPClient, ethWSClient, err := initETHClients(bootstrapCfg)
 	if err != nil {
 		panic(err)
 	}
-	ethHTTPClient := ethclient.NewClient(httpRC)
 
-	websocketRC, err := rpc.DialContext(context.Background(), bootstrapCfg.ETHWebsocket)
+	// Initialize XRP client
+	xrpClient, err := initXRPClient(bootstrapCfg.XRPRPC)
 	if err != nil {
 		panic(err)
 	}
-	ethWSClient := ethclient.NewClient(websocketRC)
 
-	xrpClient := xrpl.NewClient(xrpl.ClientConfig{URL: bootstrapCfg.XRPRPC})
-	err = xrpClient.Ping([]byte("PING"))
-	if err != nil {
-		panic(fmt.Errorf("failed to ping XRP client at %s: %w", bootstrapCfg.XRPRPC, err))
-	}
-
-	// create the sessions for bootstrap and storage contracts.
+	// Initialize bootstrap contract sessions
 	ctx := context.Background()
-	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHTTPClient)
+	bootstrapSession, bootstrapFilterer, err := initBootstrapContracts(ctx, bootstrapAddr, ethHTTPClient, ethWSClient)
 	if err != nil {
-		panic(fmt.Errorf("failed to new bootstrap caller,err:%s", err))
-	}
-	bootstrapSession := &bootstrap_binding.BootstrapCallerSession{
-		Contract: bootstrapCaller,
-		CallOpts: bind.CallOpts{Context: ctx},
-	}
-
-	// create the filterer to subscribe all related events
-	bootstrapFilterer, err := bootstrap_binding.NewBootstrapFilterer(bootstrapAddr, ethWSClient)
-	if err != nil {
-		panic(fmt.Errorf("failed to new bootstrap filterer,err:%s", err))
+		panic(err)
 	}
 
 	module := &Module{
@@ -119,6 +103,52 @@ func NewModule(
 	}
 
 	return module
+}
+
+// initETHClients initializes Ethereum HTTP and WebSocket clients
+func initETHClients(cfg *Config) (*ethclient.Client, *ethclient.Client, error) {
+	httpRC, err := rpc.DialContext(context.Background(), cfg.ETHHttp)
+	if err != nil {
+		return nil, nil, err
+	}
+	ethHTTPClient := ethclient.NewClient(httpRC)
+
+	websocketRC, err := rpc.DialContext(context.Background(), cfg.ETHWebsocket)
+	if err != nil {
+		return nil, nil, err
+	}
+	ethWSClient := ethclient.NewClient(websocketRC)
+
+	return ethHTTPClient, ethWSClient, nil
+}
+
+// initXRPClient initializes XRP client
+func initXRPClient(xrpRPC string) (*xrpl.Client, error) {
+	xrpClient := xrpl.NewClient(xrpl.ClientConfig{URL: xrpRPC})
+	err := xrpClient.Ping([]byte("PING"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to ping XRP client at %s: %w", xrpRPC, err)
+	}
+	return xrpClient, nil
+}
+
+// initBootstrapContracts initializes bootstrap contract sessions
+func initBootstrapContracts(ctx context.Context, bootstrapAddr common.Address, ethHTTPClient, ethWSClient *ethclient.Client) (*bootstrap_binding.BootstrapCallerSession, *bootstrap_binding.BootstrapFilterer, error) {
+	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHTTPClient)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to new bootstrap caller,err:%s", err)
+	}
+	bootstrapSession := &bootstrap_binding.BootstrapCallerSession{
+		Contract: bootstrapCaller,
+		CallOpts: bind.CallOpts{Context: ctx},
+	}
+
+	bootstrapFilterer, err := bootstrap_binding.NewBootstrapFilterer(bootstrapAddr, ethWSClient)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to new bootstrap filterer,err:%s", err)
+	}
+
+	return bootstrapSession, bootstrapFilterer, nil
 }
 
 // Name implements modules.Module

@@ -173,30 +173,31 @@ func (m *Module) RunAsyncOperations() {
 
 	for {
 		select {
+		// Handle subscription errors with graceful logging
 		case err := <-newValidatorSub.Err():
 			log.Err(err).Msg("new validator subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-commissionSub.Err():
 			log.Err(err).Msg("commission update subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-keyReplaceSub.Err():
 			log.Err(err).Msg("key replace subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-newAssetSub.Err():
 			log.Err(err).Msg("whitelist token addition subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-depositSub.Err():
 			log.Err(err).Msg("token deposit subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-claimSub.Err():
 			log.Err(err).Msg("token claim subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-delegationSub.Err():
 			log.Err(err).Msg("token delegation subscription error")
-			return
+			// Continue running instead of terminating
 		case err := <-undelegationSub.Err():
 			log.Err(err).Msg("token undelegation subscription error")
-			return
+			// Continue running instead of terminating
 		case e := <-newValidatorCh:
 			// save the new validator
 			err := m.database.SaveBootstrapValidator(&types.BootstrapValidator{
