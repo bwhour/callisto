@@ -7,6 +7,11 @@ import (
 	"strings"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/rs/zerolog/log"
+
 	"github.com/forbole/callisto/v4/types"
 )
 
@@ -127,7 +132,7 @@ SET name                 = EXCLUDED.name,
     decimals             = EXCLUDED.decimals,
     layer_zero_chain_id  = EXCLUDED.layer_zero_chain_id,
     staking_total_amount = EXCLUDED.staking_total_amount,
-    total_usd_value      = EXCLUDED.total_usd_value, 
+    total_usd_value      = EXCLUDED.total_usd_value,
     updated_at           = EXCLUDED.updated_at;`
 
 	_, err := db.SQL.Exec(stmt,
@@ -252,6 +257,80 @@ WHERE asset_id = $3;`
 		return fmt.Errorf("failed to update total_usd_value for asset_id=%s: %w", assetID, err)
 	}
 	return nil
+}
+
+func (db *Db) UpdateBootstrapTokenInTx(tx *sql.Tx, assetID string, stakingDelta string) error {
+	tokenInfo, err := db.GetBootstrapToken(assetID)
+	if err != nil {
+		return err
+	}
+	initialStakingAmount, ok := sdkmath.NewIntFromString(tokenInfo.StakingTotalAmount)
+	if !ok {
+		return fmt.Errorf("UpdateBootstrapTokenInTx: failed to parse total staking amount from string:%s", tokenInfo.StakingTotalAmount)
+	}
+	deltaAmount, ok := sdkmath.NewIntFromString(stakingDelta)
+	if !ok {
+		return fmt.Errorf("UpdateBootstrapTokenInTx: failed to parse stakingDelta staking amount from string:%s", stakingDelta)
+	}
+	newStakingAmount := initialStakingAmount.Add(deltaAmount)
+
+	usdValue := sdkmath.LegacyZeroDec()
+	priceStr, err := db.GetBootstrapTokenPrice(assetID)
+	if err != nil {
+		log.Err(err).Str("assetID", assetID).Msg("UpdateBootstrapTokenInTx: get token price from database")
+		// Using zero as the USD value; continue handling other assets without returning
+	} else {
+		// calculate the total USD value of this asset
+		priceDec := sdkmath.LegacyMustNewDecFromStr(priceStr)
+		divisor := sdkmath.NewIntWithDecimal(1, int(tokenInfo.Decimals)) // #nosec G115
+		usdValue = priceDec.MulInt(newStakingAmount).QuoInt(divisor)
+	}
+
+	// update the total staking amount and USD value in the bootstrap token state.
+	var ownTx bool
+	var retErr error
+	if tx == nil {
+		var err error
+		tx, err = db.SQL.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		ownTx = true
+		defer func() {
+			if ownTx {
+				if rbErr := tx.Rollback(); rbErr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("failed to rollback transaction: %w", rbErr))
+				}
+			}
+		}()
+	}
+
+	stmt := `
+UPDATE bootstrap_tokens
+SET staking_total_amount = $1,
+    total_usd_value = $2,
+    updated_at = $3
+WHERE asset_id = $4;`
+
+	_, err = tx.Exec(stmt,
+		newStakingAmount.String(),
+		usdValue.String(),
+		time.Now(),
+		assetID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update bootstrap asset: %w", err)
+	}
+	if !ownTx {
+		return nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	ownTx = false
+	return retErr
 }
 
 func (db *Db) SaveBootstrapStakerAsset(a *types.BootstrapStakerAsset) error {
@@ -507,6 +586,113 @@ SET total_amount = EXCLUDED.total_amount,
 	return nil
 }
 
+func (db *Db) GetBootstrapOperatorAsset(operatorAddr, assetID string) (*types.BootstrapOperatorAsset, error) {
+	stmt := `
+SELECT operator_addr, asset_id, total_amount, self_amount, other_amount, updated_at
+FROM bootstrap_operator_assets
+WHERE operator_addr = $1 AND asset_id = $2
+LIMIT 1;`
+
+	var o types.BootstrapOperatorAsset
+	err := db.SQL.QueryRow(stmt, operatorAddr, assetID).Scan(
+		&o.OperatorAddr,
+		&o.AssetID,
+		&o.TotalAmount,
+		&o.SelfAmount,
+		&o.OtherAmount,
+		&o.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no bootstrap operator asset found for operator %s and asset %s", operatorAddr, assetID)
+		}
+		return nil, fmt.Errorf("failed to get bootstrap operator asset: %w", err)
+	}
+
+	return &o, nil
+}
+
+func (db *Db) UpdateBootstrapOperatorAssetInTx(tx *sql.Tx, assetID, operatorAddr, stakerIMAddr string, delegationDelta string) error {
+	operatorAsset, err := db.GetBootstrapOperatorAsset(operatorAddr, assetID)
+	if err != nil {
+		operatorAsset = &types.BootstrapOperatorAsset{
+			AssetID:      assetID,
+			OperatorAddr: operatorAddr,
+			TotalAmount:  sdkmath.ZeroInt().String(),
+			SelfAmount:   sdkmath.ZeroInt().String(),
+			OtherAmount:  sdkmath.ZeroInt().String(),
+		}
+	}
+	totalAmount, ok := sdkmath.NewIntFromString(operatorAsset.TotalAmount)
+	if !ok {
+		return fmt.Errorf("UpdateBootstrapOperatorAssetInTx: failed to parse total amount from string:%s", operatorAsset.TotalAmount)
+	}
+	selfAmount, ok := sdkmath.NewIntFromString(operatorAsset.SelfAmount)
+	if !ok {
+		return fmt.Errorf("UpdateBootstrapOperatorAssetInTx: failed to parse self amount from string:%s", operatorAsset.SelfAmount)
+	}
+	otherAmount, ok := sdkmath.NewIntFromString(operatorAsset.OtherAmount)
+	if !ok {
+		return fmt.Errorf("UpdateBootstrapOperatorAssetInTx: failed to parse other amount from string:%s", operatorAsset.OtherAmount)
+	}
+	deltaAmount, ok := sdkmath.NewIntFromString(delegationDelta)
+	if !ok {
+		return fmt.Errorf("UpdateBootstrapOperatorAssetInTx: failed to parse delegationDelta staking amount from string:%s", delegationDelta)
+	}
+
+	totalAmount = totalAmount.Add(deltaAmount)
+	operatorAccAddr, err := sdk.AccAddressFromBech32(operatorAddr)
+	if err != nil {
+		return err
+	}
+	stakerEVMAddr := common.HexToAddress(stakerIMAddr)
+	if stakerEVMAddr == common.Address(operatorAccAddr) {
+		selfAmount = selfAmount.Add(deltaAmount)
+	} else {
+		otherAmount = otherAmount.Add(deltaAmount)
+	}
+
+	var ownTx bool
+	var retErr error
+	if tx == nil {
+		var err error
+		tx, err = db.SQL.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		ownTx = true
+		defer func() {
+			if ownTx {
+				if rbErr := tx.Rollback(); rbErr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("failed to rollback transaction: %w", rbErr))
+				}
+			}
+		}()
+	}
+	err = db.SaveBootstrapOperatorAssetInTx(tx, &types.BootstrapOperatorAsset{
+		AssetID:      assetID,
+		OperatorAddr: operatorAddr,
+		TotalAmount:  totalAmount.String(),
+		SelfAmount:   selfAmount.String(),
+		OtherAmount:  otherAmount.String(),
+		UpdatedAt:    time.Now(),
+	})
+	if err != nil {
+		return err
+	}
+
+	if !ownTx {
+		return nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	ownTx = false
+	return retErr
+}
+
 // Incremental scanning state management functions
 // GetScanState retrieves the scanning state for a specific chain type
 func (db *Db) GetScanState(chainType string) (*types.ScanState, error) {
@@ -757,22 +943,23 @@ ON CONFLICT (chain_type, tx_hash) DO NOTHING`
 
 // GetLastProcessedTransaction gets the last processed transaction ID for a specific chain type
 // Used for pagination when fetching transactions from address API
-func (db *Db) GetLastProcessedTransaction(chainType string) (string, error) {
-	stmt := `SELECT tx_hash FROM bootstrap_processed_transactions
+func (db *Db) GetLastProcessedTransaction(chainType string) (string, int64, error) {
+	stmt := `SELECT tx_hash, block_height FROM bootstrap_processed_transactions
              WHERE chain_type = $1
              ORDER BY block_height DESC, processed_at DESC
              LIMIT 1`
 
 	var txHash string
-	err := db.SQL.QueryRow(stmt, chainType).Scan(&txHash)
+	var blockHeight sql.NullInt64
+	err := db.SQL.QueryRow(stmt, chainType).Scan(&txHash, &blockHeight)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", nil // No transactions processed yet, return empty string
+			return "", 0, nil // No transactions processed yet
 		}
-		return "", fmt.Errorf("failed to get last processed transaction for %s: %w", chainType, err)
+		return "", 0, fmt.Errorf("failed to get last processed transaction for %s: %w", chainType, err)
 	}
 
-	return txHash, nil
+	return txHash, blockHeight.Int64, nil
 }
 
 func (db *Db) OperatorAssetExists(operatorAddr string, assetID string) (bool, error) {

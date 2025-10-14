@@ -1,16 +1,6 @@
 table:
   name: bootstrap_token_prices
   schema: public
-
-object_relationships:
-  - name: token
-    using:
-      foreign_key_constraint_on:
-        column: asset_id
-        table:
-          name: bootstrap_tokens
-          schema: public
-
 select_permissions:
   - permission:
       columns:

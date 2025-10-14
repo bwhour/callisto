@@ -1,23 +1,6 @@
 table:
   name: bootstrap_operator_assets
   schema: public
-
-object_relationships:
-  - name: validator
-    using:
-      foreign_key_constraint_on:
-        column: operator_addr
-        table:
-          name: bootstrap_validator
-          schema: public
-  - name: token
-    using:
-      foreign_key_constraint_on:
-        column: asset_id
-        table:
-          name: bootstrap_tokens
-          schema: public
-
 select_permissions:
   - permission:
       columns:

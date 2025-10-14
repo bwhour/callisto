@@ -6,14 +6,14 @@ array_relationships:
   - name: delegation_states
     using:
       foreign_key_constraint_on:
-        column: validator_im_addr
+        column: operator_addr
         table:
           name: bootstrap_delegation_states
           schema: public
   - name: operator_assets
     using:
       foreign_key_constraint_on:
-        column: validator_im_addr
+        column: operator_addr
         table:
           name: bootstrap_operator_assets
           schema: public

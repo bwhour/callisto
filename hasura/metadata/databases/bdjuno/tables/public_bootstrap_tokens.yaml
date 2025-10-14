@@ -5,11 +5,7 @@ table:
 object_relationships:
   - name: client_chain
     using:
-      foreign_key_constraint_on:
-        column: layer_zero_chain_id
-        table:
-          name: bootstrap_client_chains
-          schema: public
+      foreign_key_constraint_on: layer_zero_chain_id
 
 array_relationships:
   - name: token_prices
