@@ -38,25 +38,31 @@ func (m *Module) loadExistingBindings() error {
 func (m *Module) RunAdditionalOperations() error {
 	// Save default client chains from the config
 	for _, clientChain := range m.Config.ClientChainInfos {
-		err := m.database.SaveBootstrapClientChain(&types.BootstrapClientChain{
-			Name:      clientChain.Name,
-			MetaInfo:  clientChain.MetaInfo,
-			LZChainID: clientChain.LZChainID,
-		})
+		_, err := m.database.GetBootstrapClientChain(clientChain.LZChainID)
 		if err != nil {
-			return err
+			err = m.database.SaveBootstrapClientChain(&types.BootstrapClientChain{
+				Name:      clientChain.Name,
+				MetaInfo:  clientChain.MetaInfo,
+				LZChainID: clientChain.LZChainID,
+			})
+			if err != nil {
+				return err
+			}
 		}
 	}
 	// save default staking tokens from the config
 	for _, stakingToken := range m.Config.StakingTokenInfos {
-		err := m.database.SaveBootstrapToken(&types.BootstrapTokenState{
-			BootstrapToken:     stakingToken,
-			StakingTotalAmount: big.NewInt(0).String(),
-			TotalUSDValue:      big.NewInt(0).String(),
-			UpdatedAt:          time.Now(),
-		})
+		_, err := m.database.GetBootstrapToken(stakingToken.AssetID)
 		if err != nil {
-			return err
+			err = m.database.SaveBootstrapToken(&types.BootstrapTokenState{
+				BootstrapToken:     stakingToken,
+				StakingTotalAmount: big.NewInt(0).String(),
+				TotalUSDValue:      big.NewInt(0).String(),
+				UpdatedAt:          time.Now(),
+			})
+			if err != nil {
+				return err
+			}
 		}
 	}
 	if err := m.refetchETHStates(); err != nil {

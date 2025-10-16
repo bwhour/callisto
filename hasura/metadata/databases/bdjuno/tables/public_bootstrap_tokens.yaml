@@ -47,6 +47,7 @@ select_permissions:
         - decimals
         - layer_zero_chain_id
         - staking_total_amount
+        - total_usd_value
         - updated_at
       filter: {}
       limit: 20

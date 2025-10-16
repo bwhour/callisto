@@ -119,6 +119,31 @@ SET name       = EXCLUDED.name,
 	return nil
 }
 
+func (db *Db) GetBootstrapClientChain(layerZeroChainID uint64) (*types.BootstrapClientChain, error) {
+	stmt := `
+SELECT name, meta_info, layer_zero_chain_id
+FROM bootstrap_client_chains
+WHERE layer_zero_chain_id = $1
+LIMIT 1;`
+
+	row := db.SQL.QueryRow(stmt, layerZeroChainID)
+
+	var c types.BootstrapClientChain
+	err := row.Scan(
+		&c.Name,
+		&c.MetaInfo,
+		&c.LZChainID,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no bootstrap client chain found for layer_zero_chain_id %d", layerZeroChainID)
+		}
+		return nil, fmt.Errorf("failed to get bootstrap client chain: %w", err)
+	}
+
+	return &c, nil
+}
+
 func (db *Db) SaveBootstrapToken(t *types.BootstrapTokenState) error {
 	stmt := `
 INSERT INTO bootstrap_tokens (

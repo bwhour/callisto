@@ -1,9 +1,13 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	sdkmath "cosmossdk.io/math"
 
@@ -129,6 +133,40 @@ func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.
 
 // RunAsyncOperations implements modules.AsyncOperationsModule
 func (m *Module) RunAsyncOperations() {
+	for {
+		redial, err := m.SubscribeBootstrapEvents()
+		if err != nil && redial {
+			log.Err(err).Msg("redial the ETH websocket RPC due to an error")
+			if m.EthWSClient != nil {
+				m.EthWSClient.Close()
+			}
+			bootstrapAddr := common.HexToAddress(m.Config.BootstrapAddr)
+			// redial the websocket RPC
+			for {
+				websocketRC, err := rpc.DialContext(context.Background(), m.Config.ETHWebsocket)
+				if err != nil {
+					log.Err(err).Msg("failed to dial ETH websocket RPC")
+					// redial the RPC after sleeping 1 minute
+					time.Sleep(time.Minute)
+					continue
+				}
+				ethWSClient := ethclient.NewClient(websocketRC)
+				// create the filterer to subscribe all related events
+				bootstrapFilterer, err := bootstrap_binding.NewBootstrapFilterer(bootstrapAddr, ethWSClient)
+				if err != nil {
+					panic(fmt.Errorf("failed to new bootstrap filterer,err:%s", err))
+				}
+				m.EthWSClient = ethWSClient
+				m.bootstrapFilterer = bootstrapFilterer
+				break
+			}
+		} else {
+			panic(fmt.Errorf("failed to subscribe bootstrap events,err:%s", err))
+		}
+	}
+}
+
+func (m *Module) SubscribeBootstrapEvents() (bool, error) {
 	commonWatchCtx := &bind.WatchOpts{
 		Context: m.ctx,
 	}
@@ -139,19 +177,19 @@ func (m *Module) RunAsyncOperations() {
 
 	newValidatorSub, err := m.bootstrapFilterer.WatchValidatorRegistered(commonWatchCtx, newValidatorCh)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch validator registeration,err:%s", err))
+		return false, fmt.Errorf("failed to watch validator registeration,err:%s", err)
 	}
 	defer newValidatorSub.Unsubscribe()
 
 	commissionSub, err := m.bootstrapFilterer.WatchValidatorCommissionUpdated(commonWatchCtx, commissionUpdatedCh)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch commission update,err:%s", err))
+		return false, fmt.Errorf("failed to watch commission update,err:%s", err)
 	}
 	defer commissionSub.Unsubscribe()
 
 	keyReplaceSub, err := m.bootstrapFilterer.WatchValidatorKeyReplaced(commonWatchCtx, keyReplaceCh)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch key replace,err:%s", err))
+		return false, fmt.Errorf("failed to watch key replace,err:%s", err)
 	}
 	defer keyReplaceSub.Unsubscribe()
 
@@ -159,7 +197,7 @@ func (m *Module) RunAsyncOperations() {
 	newAssetCh := make(chan *bootstrap_binding.BootstrapWhitelistTokenAdded)
 	newAssetSub, err := m.bootstrapFilterer.WatchWhitelistTokenAdded(commonWatchCtx, newAssetCh)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch whitelist token addition,err:%s", err))
+		return false, fmt.Errorf("failed to watch whitelist token addition,err:%s", err)
 	}
 	defer newAssetSub.Unsubscribe()
 
@@ -167,28 +205,28 @@ func (m *Module) RunAsyncOperations() {
 	depositCh := make(chan *bootstrap_binding.BootstrapDepositResult)
 	depositSub, err := m.bootstrapFilterer.WatchDepositResult(commonWatchCtx, depositCh, nil, nil, nil)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch token deposit,err:%s", err))
+		return false, fmt.Errorf("failed to watch token deposit,err:%s", err)
 	}
 	defer depositSub.Unsubscribe()
 
 	claimCh := make(chan *bootstrap_binding.BootstrapClaimPrincipalResult)
 	claimSub, err := m.bootstrapFilterer.WatchClaimPrincipalResult(commonWatchCtx, claimCh, nil, nil, nil)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch token claim,err:%s", err))
+		return false, fmt.Errorf("failed to watch token claim,err:%s", err)
 	}
 	defer claimSub.Unsubscribe()
 
 	delegationCh := make(chan *bootstrap_binding.BootstrapDelegateResult)
 	delegationSub, err := m.bootstrapFilterer.WatchDelegateResult(commonWatchCtx, delegationCh, nil, nil)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch token delegation,err:%s", err))
+		return false, fmt.Errorf("failed to watch token delegation,err:%s", err)
 	}
 	defer delegationSub.Unsubscribe()
 
 	undelegationCh := make(chan *bootstrap_binding.BootstrapUndelegateResult)
 	undelegationSub, err := m.bootstrapFilterer.WatchUndelegateResult(commonWatchCtx, undelegationCh, nil, nil)
 	if err != nil {
-		panic(fmt.Errorf("failed to watch token undelegation,err:%s", err))
+		return false, fmt.Errorf("failed to watch token undelegation,err:%s", err)
 	}
 	defer undelegationSub.Unsubscribe()
 
@@ -196,28 +234,28 @@ func (m *Module) RunAsyncOperations() {
 		select {
 		case err := <-newValidatorSub.Err():
 			log.Err(err).Msg("new validator subscription error")
-			return
+			return true, err
 		case err := <-commissionSub.Err():
 			log.Err(err).Msg("commission update subscription error")
-			return
+			return true, err
 		case err := <-keyReplaceSub.Err():
 			log.Err(err).Msg("key replace subscription error")
-			return
+			return true, err
 		case err := <-newAssetSub.Err():
 			log.Err(err).Msg("whitelist token addition subscription error")
-			return
+			return true, err
 		case err := <-depositSub.Err():
 			log.Err(err).Msg("token deposit subscription error")
-			return
+			return true, err
 		case err := <-claimSub.Err():
 			log.Err(err).Msg("token claim subscription error")
-			return
+			return true, err
 		case err := <-delegationSub.Err():
 			log.Err(err).Msg("token delegation subscription error")
-			return
+			return true, err
 		case err := <-undelegationSub.Err():
 			log.Err(err).Msg("token undelegation subscription error")
-			return
+			return true, err
 		case e := <-newValidatorCh:
 			// save the new validator
 			err := m.database.SaveBootstrapValidator(&types.BootstrapValidator{
@@ -307,5 +345,4 @@ func (m *Module) RunAsyncOperations() {
 			}
 		}
 	}
-
 }
